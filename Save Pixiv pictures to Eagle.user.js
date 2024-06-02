@@ -42,6 +42,30 @@ const USE_CHECK_BOX = true; // 为true时在每一张图上添加复选框代替
 const WAIT_TIME = 1000;
 // 设置项结束
 
+// 替换标签
+const TAG_REPLACE = {
+    "原創": "Original",
+    "オリジナル": "Original",
+    "ローアングル": "低角度"
+};
+
+// 排除标签
+const TAG_EXC = [
+    "イラスト",
+    "創作",
+    "美しい",
+    "女の子"
+];
+const TAG_EXC_REGEX = [
+    /オリジナル[\d]*users入り/,
+    /美?少女/
+];
+
+// 添加额外标签
+const TAG_ADD = [
+    "pixiv",
+];
+
 // 读取已存储设置
 var patt = new RegExp(GM_getValue("patt", PATT.source));
 var saveTags = GM_getValue("saveTags", SAVE_TAGS);
@@ -57,7 +81,7 @@ var useCheckbox = GM_getValue("useCheckbox", USE_CHECK_BOX);
 var waitTime = GM_getValue("waitTime", WAIT_TIME);
 // 读取结束
 // 尝试避免正则保存错误带来的后果
-if(patt.source === "[object Object]"){
+if (patt.source === "[object Object]") {
     patt = new RegExp(PATT);
     GM_setValue("patt", patt.source);
 }
@@ -121,15 +145,15 @@ var data_list = {}; // {url: {data, author, authorId}}
 var build_ver = ""; // Eagle build version
 var run_mode = "else"; // "else" || "image" || "manga" || "ugoira
 
-function isDarkMode(){
+function isDarkMode() {
     return document.getElementsByTagName("html")[0].getAttribute("data-theme") === "dark";
 }
 
 const config_div = createConfigPage();
-const sleep = (delay) => {return new Promise((resolve) => {return setTimeout(resolve, delay)})}
+const sleep = (delay) => { return new Promise((resolve) => { return setTimeout(resolve, delay) }) }
 
 
-(function(){
+(function () {
     'use strict';
 
     if (location.href.indexOf("pixiv.net") === -1) {
@@ -137,19 +161,19 @@ const sleep = (delay) => {return new Promise((resolve) => {return setTimeout(res
         return;
     }
 
-    function checkEagleStatus(){
+    function checkEagleStatus() {
         if (build_ver != "") return;
         // 获取应用版本
         GM_xmlhttpRequest({
             url: EAGLE_APP_INFO_URL,
             method: "GET",
-            onload: function(response) {
-                if(response.statusText !== "OK"){
+            onload: function (response) {
+                if (response.statusText !== "OK") {
                     console.log(`请检查eagle是否打开！`);
                     console.log(response);
                     alert("下载失败！")
                 }
-                else{
+                else {
                     build_ver = JSON.parse(response.response).data.buildVersion;
                 }
             }
@@ -158,9 +182,9 @@ const sleep = (delay) => {return new Promise((resolve) => {return setTimeout(res
         GM_xmlhttpRequest({
             url: EAGLE_GET_FOLDERS_API_URL,
             method: "GET",
-            redirect:'follow',
-            onload: function(response) {
-                if(response.status !== 200){
+            redirect: 'follow',
+            onload: function (response) {
+                if (response.status !== 200) {
                     alert(`请检查eagle是否打开！`);
                     reject();
                 }
@@ -171,9 +195,9 @@ const sleep = (delay) => {return new Promise((resolve) => {return setTimeout(res
     checkEagleStatus();
 
     // 侦听URL是否发生变化，代码来自 https://blog.csdn.net/liubangbo/article/details/103272393
-    let _wr = function(type) {
+    let _wr = function (type) {
         var orig = history[type];
-        return function() {
+        return function () {
             var rv = orig.apply(this, arguments);
             var e = new Event(type);
             e.arguments = arguments;
@@ -183,10 +207,10 @@ const sleep = (delay) => {return new Promise((resolve) => {return setTimeout(res
     };
     history.pushState = _wr('pushState');
     history.replaceState = _wr('replaceState')
-    window.addEventListener('replaceState', function(e) {
+    window.addEventListener('replaceState', function (e) {
         main();
     });
-    window.addEventListener('pushState', function(e) {
+    window.addEventListener('pushState', function (e) {
         main();
     });
 
@@ -194,25 +218,25 @@ const sleep = (delay) => {return new Promise((resolve) => {return setTimeout(res
 
     var waitingForRun; // URL发生变化时，在新页面调用的函数
 
-    function main(){
+    function main() {
         // console.log("main")
-        if (waitingForRun){
+        if (waitingForRun) {
             waitingForRun();
             waitingForRun = undefined;
         }
         // 先处理还未完成改版的旧页面和一些特殊情况
-        if(document.URL.startsWith("https://www.pixiv.net/bookmark_new_illust.php")){
+        if (document.URL.startsWith("https://www.pixiv.net/bookmark_new_illust.php")) {
             // 关注用户新作品
             waitForKeyElements(NEW_ILLUST_BUTTON, newIllustPage, true);
         }
-        else if(document.URL.startsWith("https://www.pixiv.net/ranking.php")){
+        else if (document.URL.startsWith("https://www.pixiv.net/ranking.php")) {
             // 排行榜
-            waitForKeyElements(".ranking-image-item", (element)=>{
+            waitForKeyElements(".ranking-image-item", (element) => {
                 element.before(createCheckbox());
             }, false);
             rankingPage();
         }
-        else if (document.URL.startsWith("https://www.pixiv.net/users/")){
+        else if (document.URL.startsWith("https://www.pixiv.net/users/")) {
             // 用户主页通用
             waitForKeyElements(BUTTON_SELECTOR, userPage, true, undefined, true);
             // // 收藏页面
@@ -224,23 +248,23 @@ const sleep = (delay) => {return new Promise((resolve) => {return setTimeout(res
         // 新版页面
         waitForKeyElements(BUTTON_POS, setMode, false); // artwork/** 图片详情页面
         waitForKeyElements("section", newPageCommon, false); // 通用样式
-        if(useCheckbox){
+        if (useCheckbox) {
             // 为所有图片添加复选框，但是不一定有对应的下载按键
-            waitForKeyElements(PAGE_SELECTOR, (elem)=>{
+            waitForKeyElements(PAGE_SELECTOR, (elem) => {
                 elem.prepend(createCheckbox());
             }, false);
         }
     }
 
-    function download(data){
+    function download(data) {
         // console.log(data);
-        if(!data) return;
+        if (!data) return;
         GM_xmlhttpRequest({
             url: EAGLE_IMPORT_API_URL,
             method: "POST",
             data: JSON.stringify(data),
-            onload: function(response) {
-                if(response.statusText !== "OK"){
+            onload: function (response) {
+                if (response.statusText !== "OK") {
                     console.log(`请检查eagle是否打开！`);
                     console.log(response);
                     console.log(data);
@@ -251,29 +275,29 @@ const sleep = (delay) => {return new Promise((resolve) => {return setTimeout(res
     }
 
     // 为确保不反复创建文件夹以及网站报错429，先将所有待下载数据保存到列表
-    function addToDownloadList(url, allPage = false){
+    function addToDownloadList(url, allPage = false) {
         if (url in data_list) return;
-        download_list.push({url, allPage})
+        download_list.push({ url, allPage })
     }
 
-    async function parseDownloadList(){
+    async function parseDownloadList() {
         let count = 0;
-        for(let page_num in download_list){
+        for (let page_num in download_list) {
             let url = download_list[page_num]["url"];
             let allPage = download_list[page_num]["allPage"];
             let data /* [{data, author, authorId}] */;
             await sleep(waitTime);
-            if (allPage){
+            if (allPage) {
                 data = await getImagesPage(url);
                 getFolderId(data[0].author, data[0].authorId);
                 // console.log(data);
                 data_list[url] = data;
                 count += data.length;
             }
-            else{
+            else {
                 data = await getImagePage(url);
-                getFolderId(data.author, data.authorId).then((dlFolderId)=>{
-                    if(dlFolderId === undefined){
+                getFolderId(data.author, data.authorId).then((dlFolderId) => {
+                    if (dlFolderId === undefined) {
                         console.log(`创建文件夹失败！artist: ${data.author}, id: ${data.authorId}`)
                     }
                 });
@@ -286,8 +310,8 @@ const sleep = (delay) => {return new Promise((resolve) => {return setTimeout(res
         return count;
     }
 
-    async function downloadList(){
-        if (build_ver === ""){
+    async function downloadList() {
+        if (build_ver === "") {
             alert(`请检查eagle是否打开！`);
             checkEagleStatus();
             return;
@@ -297,19 +321,19 @@ const sleep = (delay) => {return new Promise((resolve) => {return setTimeout(res
         let items_num = await parseDownloadList();
         console.log("解析完成");
         console.log(`需要创建文件夹：${folders_need_create.length}`)
-        for(let folder of folders_need_create){
+        for (let folder of folders_need_create) {
             console.log(folder);
             await createFolder(folder.author, folder.pid);
         }
         console.log(`文件夹创建完成！开始下载，共${items_num}项`);
-        for(let url in data_list){
-            for (let data of data_list[url]){
+        for (let url in data_list) {
+            for (let data of data_list[url]) {
                 // console.log(data); /* {data|item, author, authorId} */
-                getFolderId(data.author, data.authorId).then((dlFolderId)=>{
-                    if(dlFolderId === undefined){
+                getFolderId(data.author, data.authorId).then((dlFolderId) => {
+                    if (dlFolderId === undefined) {
                         console.log("创建文件夹失败！尝试直接下载……")
                     }
-                    else{
+                    else {
                         data.item.folderId = dlFolderId;
                     }
                     download(data.item);
@@ -320,15 +344,15 @@ const sleep = (delay) => {return new Promise((resolve) => {return setTimeout(res
         folders_need_create = [];
     }
 
-    function downloadAll(data){
+    function downloadAll(data) {
         // console.log(data);
-        if(!data || data.length === 0) return;
+        if (!data || data.length === 0) return;
         GM_xmlhttpRequest({
             url: EAGLE_IMPORT_API_URLS,
             method: "POST",
             data: JSON.stringify(data),
-            onload: function(response) {
-                if(response.statusText !== "OK"){
+            onload: function (response) {
+                if (response.statusText !== "OK") {
                     alert("下载失败！");
                     console.log(`请检查eagle是否打开！`);
                     console.log(response);
@@ -338,77 +362,77 @@ const sleep = (delay) => {return new Promise((resolve) => {return setTimeout(res
     }
 
     // 网站改版后页面通用样式
-    function newPageCommon(element){
-        if(useCheckbox){
+    function newPageCommon(element) {
+        if (useCheckbox) {
             let [button1, button2, button3] = createThreeButtons(element);
             $(BUTTON_SELECTOR, element).append(button1);
             $(BUTTON_SELECTOR, element).append(button2);
             $(BUTTON_SELECTOR, element).append(button3);
-        }else{
-            waitForKeyElements(PAGE_SELECTOR,(elem)=>{
+        } else {
+            waitForKeyElements(PAGE_SELECTOR, (elem) => {
                 elem.find(DL_ILLUST_BUTTON).append(addDownloadButton());
             }, true);
         }
     }
 
     // 收藏页面
-    function bookmarksPage(element){
+    function bookmarksPage(element) {
         $(".sc-1dg0za1-7", element).text("下载/管理收藏")
-        function bookmarkAppendButton(){
+        function bookmarkAppendButton() {
             let button = document.createElement("div");
             button.className = "sc-1ij5ui8-0 QihHO sc-13ywrd6-7 tPCje";
             button.setAttribute("aria-disabled", "false");
             button.setAttribute("role", "button");
-            if(isDarkMode()){
-                button.innerHTML='<div aria-disabled="false" class="sc-4a5gah-0 hCTOkT"><div class="sc-4a5gah-1 kHyYuA">下载</div></div>';
+            if (isDarkMode()) {
+                button.innerHTML = '<div aria-disabled="false" class="sc-4a5gah-0 hCTOkT"><div class="sc-4a5gah-1 kHyYuA">下载</div></div>';
             }
-            else{
-                button.innerHTML='<div aria-disabled="false" class="sc-4a5gah-0 bmIdgb"><div class="sc-4a5gah-1 kHyYuA">下载</div></div>';
+            else {
+                button.innerHTML = '<div aria-disabled="false" class="sc-4a5gah-0 bmIdgb"><div class="sc-4a5gah-1 kHyYuA">下载</div></div>';
             }
-            button.addEventListener("click", ()=>{
-                if (build_ver === ""){
+            button.addEventListener("click", () => {
+                if (build_ver === "") {
                     checkEagleStatus();
                 }
                 let count = $(BOOKMARK_SELECT).length;
-                $(BOOKMARK_SELECT).each((index, elem)=>{
+                $(BOOKMARK_SELECT).each((index, elem) => {
                     let e = $(SELECT_CHECK, elem)[0];
-                    if(e && e.checked){
+                    if (e && e.checked) {
                         addToDownloadList("https://www.pixiv.net" + $(SELECT_URL, elem).attr("to"), DLMultiple);
-                        if(--count === 0){
+                        if (--count === 0) {
                             downloadList();
                         }
                         e.checked = false;
                     }
-                    else if(--count === 0){
+                    else if (--count === 0) {
                         downloadList();
                     }
                 })
             });
             $(BDL_BUTTON_POS).append(button);
-            $(PAGE_SELECTOR+":first").click();
-            $(PAGE_SELECTOR+":first").click();
-            $(OVER_BUTTON+":last").click(()=>{
+            $(PAGE_SELECTOR + ":first").click();
+            $(PAGE_SELECTOR + ":first").click();
+            $(OVER_BUTTON + ":last").click(() => {
                 waitForKeyElements(BOOKMARKS_BUTTON, bookmarksPage, true);
             });
         }
-        element.click(()=>{
+        element.click(() => {
             setTimeout(bookmarkAppendButton, 10);
         })
     }
 
     // 关注用户新作品页
-    function newIllustPage(){
-        if(useCheckbox){
+    function newIllustPage() {
+        if (useCheckbox) {
             let element = $("section");
             let [button1, button2, button3] = createThreeButtons(element);
             $(NEW_ILLUST_BUTTON).append(button1);
             $(NEW_ILLUST_BUTTON).append(button2);
             $(NEW_ILLUST_BUTTON).append(button3);
         }
-        $(PAGE_SELECTOR).each((index, elem)=>{
-            if(useCheckbox){
+        $(PAGE_SELECTOR).each((index, elem) => {
+            if (useCheckbox) {
                 elem.parentElement.append(createCheckbox());
-            }else{
+            } else {
                 elem.append(addDownloadButton());
             }
         })
@@ -417,44 +441,44 @@ const sleep = (delay) => {return new Promise((resolve) => {return setTimeout(res
     }
 
     // 用户作品页
-    function userPage(){
+    function userPage() {
         // console.log("no error")
         // userId = document.URL.split("/")[4];
         let page = document.URL.split("/")[5]?.split("?")[0];
         let pageCount = document.URL.split("=")[1];
         let button;
-        if (page === "request" || page === "artworks"){
+        if (page === "request" || page === "artworks") {
             button = createCommonButton("下载全部作品");
         }
-        else if (page === "illustrations"){
+        else if (page === "illustrations") {
             button = createCommonButton("下载全部插画");
         }
-        else if (page === "manga"){
+        else if (page === "manga") {
             button = createCommonButton("下载全部漫画");
         }
-        else if (page === "bookmarks"){
+        else if (page === "bookmarks") {
             button = createCommonButton("下载全部作品");
             waitForKeyElements(BOOKMARKS_BUTTON, bookmarksPage, true);
-            waitForKeyElements(".button_to_eagle", (e)=>{e.css("display", "none")}, true);
-            waitForKeyElements(".to_eagle", (e)=>{e.parent().css("display", "none")}, true);
+            waitForKeyElements(".button_to_eagle", (e) => { e.css("display", "none") }, true);
+            waitForKeyElements(".to_eagle", (e) => { e.parent().css("display", "none") }, true);
         }
-        else{
+        else {
             // 个人主页，不创建按键
             return;
         }
         let section = $("section")[0];
-        button.addEventListener("click", ()=>{
-            if (build_ver == ""){
+        button.addEventListener("click", () => {
+            if (build_ver == "") {
                 checkEagleStatus();
             }
             if (!confirm("该操作将下载当前筛选结果中的全部内容，下载过程中会自动翻页，确认继续？")) return;
-            if (page === undefined){
+            if (page === undefined) {
                 // $(".to_eagle", section).data ('alreadyFound', true);
                 $(SHOW_ALL)[0].click();
                 // waitingForRun = ()=>{button.click()};
                 // return;
             }
-            else if(pageCount && pageCount != "1"){
+            else if (pageCount && pageCount != "1") {
                 // $(".to_eagle").data ('alreadyFound', true);
                 $(FIRST_PAGE)[0].click();
             }
@@ -468,8 +492,8 @@ const sleep = (delay) => {return new Promise((resolve) => {return setTimeout(res
     }
 
     // 排行榜
-    function rankingPage(){
-        if(document.URL.search("content=ugoira") !== -1){
+    function rankingPage() {
+        if (document.URL.search("content=ugoira") !== -1) {
             return;
         }
         let pos = document.createElement("ul");
@@ -480,34 +504,34 @@ const sleep = (delay) => {return new Promise((resolve) => {return setTimeout(res
         button2.innerHTML = '<a style="cursor: pointer;color: #258fb8;padding: 10px;background: none;border: none;">取消</a>';
         let button3 = document.createElement("li");
         button3.innerHTML = '<a style="cursor: pointer;color: #258fb8;padding: 10px;background: none;border: none;">下载</a>';
-        button1.addEventListener("click", ()=>{
-            $(".to_eagle").each((i,e)=>{
+        button1.addEventListener("click", () => {
+            $(".to_eagle").each((i, e) => {
                 e.checked = true;
             });
         });
-        button2.addEventListener("click", ()=>{
-            $(".to_eagle").each((i,e)=>{
+        button2.addEventListener("click", () => {
+            $(".to_eagle").each((i, e) => {
                 e.checked = false;
             });
         });
-        button3.addEventListener("click", ()=>{
-            if (build_ver === ""){
+        button3.addEventListener("click", () => {
+            if (build_ver === "") {
                 checkEagleStatus();
             }
             let count = $(".to_eagle").length;
-            $(".to_eagle").each(async (i,e)=>{
-                if(e.checked){
+            $(".to_eagle").each(async (i, e) => {
+                if (e.checked) {
                     addToDownloadList(e.parentElement.nextElementSibling.firstElementChild.href, DLMultiple);
-                    if(--count === 0){
+                    if (--count === 0) {
                         downloadList();
                     }
                     e.checked = false;
                 }
-                else if(--count === 0){
+                else if (--count === 0) {
                     downloadList();
                 }
             });
-            $("button",button3).css("color", "black");
+            $("button", button3).css("color", "black");
         });
         pos.appendChild(button1);
         pos.appendChild(button2);
@@ -516,14 +540,14 @@ const sleep = (delay) => {return new Promise((resolve) => {return setTimeout(res
     }
 
     // 图片详情页
-    function setMode(){
+    function setMode() {
 
         // 单图
-        function imagePage(){
+        function imagePage() {
             run_mode = "image";
-            function getImageData(){
+            function getImageData() {
                 let image = document.getElementsByClassName("sc-1qpw8k9-3")[0];// 单图
-                if(!image){
+                if (!image) {
                     alert("下载失败！");
                     return;
                 }
@@ -540,26 +564,26 @@ const sleep = (delay) => {return new Promise((resolve) => {return setTimeout(res
             };
 
             let pos = $(BUTTON_POS);
-            if(pos.length === 0) return;
+            if (pos.length === 0) return;
             let button = createNormalButton("下载");
             pos[0].appendChild(button);
-            button.addEventListener("click", async function(){
-                if (build_ver === ""){
+            button.addEventListener("click", async function () {
+                if (build_ver === "") {
                     checkEagleStatus();
                 }
                 //下载同时自动点赞+收藏
-                if(addToFavor){
-                    try{
+                if (addToFavor) {
+                    try {
                         document.getElementsByClassName("_35vRH4a")[0].click();
                         document.getElementsByClassName("gtm-main-bookmark")[0].click();
-                    }catch(e){}
+                    } catch (e) { }
                 }
                 let [data, author, id] = getImageData();
                 let dlFolderId = await getFolderId(author, id);
-                if(dlFolderId === undefined){
+                if (dlFolderId === undefined) {
                     console.log("创建文件夹失败！尝试直接下载……")
                 }
-                else{
+                else {
                     data.folderId = dlFolderId;
                 }
                 download(data);
@@ -567,93 +591,93 @@ const sleep = (delay) => {return new Promise((resolve) => {return setTimeout(res
             });
         }
 
-            function getImagesData(images){
-                if(images.length === 0){
-                    alert("下载失败！");
-                    return [null, null];
-                }
-                let data = {"items":[]};
-                let [name, annotation, tags, author, id] = getCommonInfo();
-                images.each((index, url) => {
-                    if(url === undefined) return;
+        function getImagesData(images) {
+            if (images.length === 0) {
+                alert("下载失败！");
+                return [null, null];
+            }
+            let data = { "items": [] };
+            let [name, annotation, tags, author, id] = getCommonInfo();
+            images.each((index, url) => {
+                if (url === undefined) return;
+                data.items.push({
+                    "url": url.href,
+                    "name": name + `_${index}`,
+                    "website": document.URL,
+                    "annotation": annotation,
+                    "tags": tags,
+                    "headers": HEADERS
+                });
+                index++;
+            });
+            return [data, author, id, name];
+        };
+
+        function getSelectData() {
+            let checkbox = $(".to_eagle");
+            let [name, annotation, tags, author, id] = getCommonInfo();
+            let data = { "items": [] };
+            checkbox.each((index, element) => {
+                if (element.checked === true) {
                     data.items.push({
-                        "url": url.href,
+                        "url": element.parentElement.nextElementSibling.href,
                         "name": name + `_${index}`,
                         "website": document.URL,
                         "annotation": annotation,
                         "tags": tags,
                         "headers": HEADERS
-                    });
-                    index++;
-                });
-                return [data, author, id, name];
-            };
-
-            function getSelectData(){
-                let checkbox = $(".to_eagle");
-                let [name, annotation, tags, author, id] = getCommonInfo();
-                let data = {"items":[]};
-                checkbox.each((index, element)=>{
-                    if(element.checked === true){
-                        data.items.push({
-                            "url": element.parentElement.nextElementSibling.href,
-                            "name": name + `_${index}`,
-                            "website": document.URL,
-                            "annotation": annotation,
-                            "tags": tags,
-                            "headers": HEADERS
-                        })
-                    }
-                });
-                return [data, author, id, name];
-            };
+                    })
+                }
+            });
+            return [data, author, id, name];
+        };
 
         // 多图
-        function multiImagesPage(){
+        function multiImagesPage() {
             run_mode = "multi_images";
             let pos = $(BUTTON_POS);
-            if(pos.length === 0) return;
+            if (pos.length === 0) return;
             let button = createNormalButton("下载");
             pos[0].appendChild(button);
             //绑定点击按钮时下载事件
             button.addEventListener("click", async () => {
-                if (build_ver === ""){
+                if (build_ver === "") {
                     checkEagleStatus();
                 }
                 //下载同时自动点赞+收藏
-                if(addToFavor){
-                    try{
+                if (addToFavor) {
+                    try {
                         document.getElementsByClassName("_35vRH4a")[0].click();
                         document.getElementsByClassName("gtm-main-bookmark")[0].click();
-                    }catch(e){}
+                    } catch (e) { }
                 }
                 let [data, author, id, name] = getImagesData($(PIC_SRC));
                 let dlFolderId = await getFolderId(author, id);
-                if(data.items.length > 1 && createSubfolder){
+                if (data.items.length > 1 && createSubfolder) {
                     let data = await createFolder(name, id, dlFolderId, true);
                     dlFolderId = data.id;
                 }
-                if(dlFolderId === undefined){
+                if (dlFolderId === undefined) {
                     console.log("创建文件夹失败！尝试直接下载……");
                 }
-                else{
+                else {
                     data.folderId = dlFolderId;
                 }
                 downloadAll(data);
                 changeStyle(button);
             });
             let added = false;
-            function changeButton(){
+            function changeButton() {
                 // console.log("changed")
-                if(added) return;
+                if (added) return;
                 added = true;
-                $("span",button)[0].innerText = "下载全部";
+                $("span", button)[0].innerText = "下载全部";
                 let button2 = createNormalButton("下载选择");
                 pos[0].appendChild(button2);
                 button2.addEventListener("click", async () => {
                     let [data, author, id, name] = getSelectData();
                     let dlFolderId = await getFolderId(author, id);
-                    if(data.items.length > 1 && createSubfolder){
+                    if (data.items.length > 1 && createSubfolder) {
                         let data = await createFolder(name, id, dlFolderId, true);
                         dlFolderId = data.id;
                     }
@@ -667,67 +691,67 @@ const sleep = (delay) => {return new Promise((resolve) => {return setTimeout(res
                     changeStyle(button2);
                 });
 
-                function addImagesCheckbox(){
+                function addImagesCheckbox() {
                     let imgs = $(PIC_SRC);
-                    imgs.each((index,element)=>{
+                    imgs.each((index, element) => {
                         element.before(createCheckbox());
                     });
                 }
                 waitForKeyElements(PIC_END, addImagesCheckbox, true);
             }
             let clickpos = $(PIC_SRC);
-            if(clickpos.length !== 0){
-                clickpos[0].addEventListener("click",changeButton)
+            if (clickpos.length !== 0) {
+                clickpos[0].addEventListener("click", changeButton)
             }
             clickpos = $(SHOW_ALL_BUTTON);
-            if(clickpos.length !== 0){
-                clickpos[0].addEventListener("click",changeButton)
+            if (clickpos.length !== 0) {
+                clickpos[0].addEventListener("click", changeButton)
             }
             clickpos = $(".gtm-main-bookmark");
-            if(clickpos.length !== 0){
-                clickpos[0].addEventListener("click",changeButton)
+            if (clickpos.length !== 0) {
+                clickpos[0].addEventListener("click", changeButton)
             }
         }
-        
+
         // 漫画
-        function mangaPage(){
+        function mangaPage() {
             run_mode = "manga";
             let pos = $(BUTTON_POS);
-            if(pos.length === 0) return;
+            if (pos.length === 0) return;
             let button = createNormalButton("下载");
             pos[0].appendChild(button);
             //绑定点击按钮时下载事件
             button.addEventListener("click", async () => {
-                if (build_ver === ""){
+                if (build_ver === "") {
                     checkEagleStatus();
                 }
                 //下载同时自动点赞+收藏
-                if(addToFavor){
-                    try{
+                if (addToFavor) {
+                    try {
                         document.getElementsByClassName("_35vRH4a")[0].click();
                         document.getElementsByClassName("gtm-main-bookmark")[0].click();
-                    }catch(e){}
+                    } catch (e) { }
                 }
                 let [data, author, id, name] = getImagesData($(PIC_SRC));
                 let dlFolderId = await getFolderId(author, id);
-                if(data.items.length > 1 && createSubfolder){
+                if (data.items.length > 1 && createSubfolder) {
                     let data = await createFolder(name, id, dlFolderId, true);
                     dlFolderId = data.id;
                 }
-                if(dlFolderId === undefined){
+                if (dlFolderId === undefined) {
                     console.log("创建文件夹失败！尝试直接下载……");
                 }
-                else{
+                else {
                     data.folderId = dlFolderId;
                 }
                 downloadAll(data);
                 changeStyle(button);
             });
             let added = false;
-            function createButtons(){
-                if(added) return;
+            function createButtons() {
+                if (added) return;
                 added = true;
-                function createMangaButton(name){
+                function createMangaButton(name) {
                     let button = document.createElement("button");
                     button.className = "sc-1qrul0z-0 bWWzsr";
                     button.innerHTML = `<svg viewBox="0 0 48 48" width="32" height="32"><path fill-rule="evenodd" clip-rule="evenodd" d="M31.4142 26.5858C32.1953 27.3668 32.1953 28.6332 31.4142 29.4142L25.4142 35.4142C24.6332 36.1953 23.3668 36.1953 22.5858 35.4142C21.8047 34.6332 21.8047 33.3668 22.5858 32.5858L28.5858 26.5858C29.3668 25.8047 30.6332 25.8047 31.4142 26.5858Z"></path><path fill-rule="evenodd" clip-rule="evenodd" d="M16.5858 26.5858C17.3668 25.8047 18.6332 25.8047 19.4142 26.5858L25.4142 32.5858C26.1953 33.3668 26.1953 34.6332 25.4142 35.4142C24.6332 36.1953 23.3668 36.1953 22.5858 35.4142L16.5858 29.4142C15.8047 28.6332 15.8047 27.3668 16.5858 26.5858Z"></path><path d="M22 14C22 12.8954 22.8954 12 24 12V12C25.1046 12 26 12.8954 26 14L26 34C26 35.1046 25.1046 36 24 36V36C22.8954 36 22 35.1046 22 34L22 14Z"></path></svg>`;
@@ -741,7 +765,7 @@ const sleep = (delay) => {return new Promise((resolve) => {return setTimeout(res
                 button1.addEventListener("click", async () => {
                     let [data, author, id, name] = getImagesData($(MANGA_SRC));
                     let dlFolderId = await getFolderId(author, id);
-                    if(data.items.length > 1 && createSubfolder){
+                    if (data.items.length > 1 && createSubfolder) {
                         let data = await createFolder(name, id, dlFolderId, true);
                         dlFolderId = data.id;
                     }
@@ -757,7 +781,7 @@ const sleep = (delay) => {return new Promise((resolve) => {return setTimeout(res
                 button2.addEventListener("click", async () => {
                     let [data, author, id, name] = getSelectData();
                     let dlFolderId = await getFolderId(author, id);
-                    if(data.items.length > 1 && createSubfolder){
+                    if (data.items.length > 1 && createSubfolder) {
                         let data = await createFolder(name, id, dlFolderId, true);
                         dlFolderId = data.id;
                     }
@@ -770,8 +794,8 @@ const sleep = (delay) => {return new Promise((resolve) => {return setTimeout(res
                     downloadAll(data);
                     // changeStyle(button2);
                 });
-    
-                function addButtons(){
+
+                function addButtons() {
                     // let imgs = $(MANGA_SRC);
                     // imgs.each((index,element)=>{
                     //     element.before(createCheckbox());
@@ -783,26 +807,26 @@ const sleep = (delay) => {return new Promise((resolve) => {return setTimeout(res
                 waitForKeyElements(MANGA_POS, addButtons, true);
             }
             let clickpos = $(PIC_SRC);
-            if(clickpos.length !== 0){
-                clickpos[0].addEventListener("click",createButtons)
+            if (clickpos.length !== 0) {
+                clickpos[0].addEventListener("click", createButtons)
             }
             clickpos = $(SHOW_ALL_BUTTON);
-            if(clickpos.length !== 0){
-                clickpos[0].addEventListener("click",createButtons)
+            if (clickpos.length !== 0) {
+                clickpos[0].addEventListener("click", createButtons)
             }
         }
 
         // 动图
-        function ugoiraPage(){
+        function ugoiraPage() {
             run_mode = "ugoira";
             console.log("暂无法处理动图！")
         }
 
-        function changeStyle(button){
+        function changeStyle(button) {
             button.className = "_1vHxmVH _35vRH4a";
         }
 
-        function createNormalButton(text){
+        function createNormalButton(text) {
             let button = document.createElement('div');
             button.setAttribute('class', 'sc-181ts2x-01');
             button.setAttribute('style', 'margin-right: 23px;');
@@ -810,14 +834,14 @@ const sleep = (delay) => {return new Promise((resolve) => {return setTimeout(res
             return button;
         }
 
-        if($(UGO_SRC).length !== 0){
+        if ($(UGO_SRC).length !== 0) {
             return ugoiraPage();
         }
-        if($(SHOW_ALL_BUTTON).length !== 0){
-            if($(READ_MANGA).text() === "查看全部"){
+        if ($(SHOW_ALL_BUTTON).length !== 0) {
+            if ($(READ_MANGA).text() === "查看全部") {
                 return multiImagesPage();
             }
-            else{
+            else {
                 return mangaPage();
             }
         }
@@ -825,19 +849,19 @@ const sleep = (delay) => {return new Promise((resolve) => {return setTimeout(res
     };
 
     // 等待页面加载完成
-    function waitForPageLoaded(lastFirst, callback){
+    function waitForPageLoaded(lastFirst, callback) {
         return new Promise((resolve, reject) => {
-            let timeControl = setInterval(()=>{
-                if (lastFirst === undefined){
+            let timeControl = setInterval(() => {
+                if (lastFirst === undefined) {
                     reject(lastFirst)
                 }
                 let tmp = $(".to_eagle");
-                if (tmp.length > 0 && tmp[0] != lastFirst){
+                if (tmp.length > 0 && tmp[0] != lastFirst) {
                     clearInterval(timeControl);
-                    if (callback){
+                    if (callback) {
                         resolve([tmp, callback(tmp)]);
                     }
-                    else{
+                    else {
                         resolve(tmp);
                     }
                 }
@@ -845,42 +869,42 @@ const sleep = (delay) => {return new Promise((resolve) => {return setTimeout(res
         });
     }
 
-    function addThisPageToList(){
+    function addThisPageToList() {
         let elements = $(".to_eagle");
         let count = elements.length;
-        console.log("从", document.URL,"获取到", count, "个作品链接");
-        elements.each((i,e)=>{
+        console.log("从", document.URL, "获取到", count, "个作品链接");
+        elements.each((i, e) => {
             addToDownloadList(e.parentElement.nextElementSibling.href, DLMultiple);
-            if(--count === 0){
-                downloadList().then(()=>{
+            if (--count === 0) {
+                downloadList().then(() => {
                     console.log(document.URL, "解析完成");
                 })
             }
         });
     }
 
-    async function addAllArtBetweenPages(start_page, end_page){
+    async function addAllArtBetweenPages(start_page, end_page) {
         console.log(`准备下载第${start_page}页到第${end_page}页内容`);
         let page = document.URL.split("=")[1];
-        if (page === undefined){
+        if (page === undefined) {
             page = "1";
         }
         let elements = $(".to_eagle");
-        if (page != start_page){
-            if (page != "1"){
+        if (page != start_page) {
+            if (page != "1") {
                 $(FIRST_PAGE)[0].click();
                 elements = await waitForPageLoaded(elements[0]);
             }
-            if (start_page != "1"){
+            if (start_page != "1") {
                 console.log(`将从第1页开始翻页至第${start_page}页`);
-                while (page != start_page){
+                while (page != start_page) {
                     $(NEXT_PAGE)[0].click();
                     elements = await waitForPageLoaded(elements[0]);
                     page = document.URL.split("=")[1];
                 }
             }
         }
-        for (let i = start_page; i < end_page; i++){
+        for (let i = start_page; i < end_page; i++) {
             console.log(`开始解析第${i}页`);
             addThisPageToList();
             $(NEXT_PAGE)[0].click();
@@ -889,21 +913,21 @@ const sleep = (delay) => {return new Promise((resolve) => {return setTimeout(res
         addThisPageToList();
     }
 
-    function addAllArtToList(elements){
+    function addAllArtToList(elements) {
         let count = elements.length;
-        console.log("从", document.URL,"获取到", count, "个作品链接");
+        console.log("从", document.URL, "获取到", count, "个作品链接");
         // if (count < 48){
         //     console.log("当前页面疑似未能加载完成，请之后手动下载……");
         // }
-        elements.each((i,e)=>{
+        elements.each((i, e) => {
             addToDownloadList(e.parentElement.nextElementSibling.href, true);
-            if(--count === 0){
+            if (--count === 0) {
                 downloadList().then(() => {
                     let nextpage = $(NEXT_PAGE)[0];
-                    if (nextpage === undefined || nextpage.hidden){
+                    if (nextpage === undefined || nextpage.hidden) {
                         console.log("全部页面解析完成");
                     }
-                    else{
+                    else {
                         nextpage.click();
                         waitForPageLoaded(elements[0], addAllArtToList);
                     }
@@ -913,75 +937,75 @@ const sleep = (delay) => {return new Promise((resolve) => {return setTimeout(res
     }
 
     // 获取文件夹id
-    async function getFolderId(author, pid){
+    async function getFolderId(author, pid) {
         // 搜索同名或注释中包含有pid信息的文件夹
-        function searchFolder(folders, author, pid){
-            for(let folder of folders){
+        function searchFolder(folders, author, pid) {
+            for (let folder of folders) {
                 let description = folder.description;
                 description = description ? description.match(/(?<=pid ?[:=] ?)\d+/) : "";
-                if((description && description[0] === pid) || folder.name === author){
-                    if(description){
-                        if(description[0] !== pid){
+                if ((description && description[0] === pid) || folder.name === author) {
+                    if (description) {
+                        if (description[0] !== pid) {
                             continue;
                         }
                     }
-                    else{
+                    else {
                         let d = "";
-                        for(let s of folder.description.split("\n")){
-                            if(!/^ *pid ?[:=] ?/.test(s)){
+                        for (let s of folder.description.split("\n")) {
+                            if (!/^ *pid ?[:=] ?/.test(s)) {
                                 d += "\n" + s;
                             }
                         }
                         updateFolder({
                             "folderId": folder.id,
-                            "newDescription":`pid = ${pid}${d}`
+                            "newDescription": `pid = ${pid}${d}`
                         })
                     }
                     return folder;
                 }
             }
-            for(let folder of folders){
+            for (let folder of folders) {
                 let target = searchFolder(folder.children, author, pid);
-                if(target) return target;
+                if (target) return target;
             }
         }
 
-        if(!pid){
+        if (!pid) {
             console.log("获取用户id失败！");
         }
-        if(!author && !pid) return;
+        if (!author && !pid) return;
         let dlFolder;
-        if(folders){
-            if(searchDirName === ""){
+        if (folders) {
+            if (searchDirName === "") {
                 dlFolder = searchFolder(folders, author, pid);
             }
-            else{
-                for(let folder of folders){
-                    if(folder.name === searchDirName){
-                        if(searchDirId === ""){
+            else {
+                for (let folder of folders) {
+                    if (folder.name === searchDirName) {
+                        if (searchDirId === "") {
                             searchDirId = folder.id;
                         }
                         // console.log(searchDirId);
                         dlFolder = searchFolder(folder.children, author, pid);
                     }
-                    else{
+                    else {
                         let description = folder.description?.match(/(?<=pid ?[:=] ?)\d+/);
-                        if((description && description[0] === pid) || folder.name === author){
-                            if(description){
-                                if(description[0] !== pid){
+                        if ((description && description[0] === pid) || folder.name === author) {
+                            if (description) {
+                                if (description[0] !== pid) {
                                     continue;
                                 }
                             }
-                            else{
+                            else {
                                 let d = "";
-                                for(let s of description.split("\n")){
-                                    if(!/^ *pid ?[:=] ?/.test(s)){
+                                for (let s of description.split("\n")) {
+                                    if (!/^ *pid ?[:=] ?/.test(s)) {
                                         d += "\n" + s;
                                     }
                                 }
                                 updateFolder({
                                     "folderId": folder.id,
-                                    "newDescription":`pid = ${pid}${d}`
+                                    "newDescription": `pid = ${pid}${d}`
                                 })
                             }
                             dlFolder = folder;
@@ -991,24 +1015,24 @@ const sleep = (delay) => {return new Promise((resolve) => {return setTimeout(res
                 }
             }
         }
-        else{
+        else {
             console.log("获取文件夹信息失败！");
             alert("下载失败！");
             return;
         }
-        if(!dlFolder){
-            if(run_mode == "else"){
-                if(folders_need_create){
-                    for(let f of folders_need_create){
-                        if(f.pid === pid){
+        if (!dlFolder) {
+            if (run_mode == "else") {
+                if (folders_need_create) {
+                    for (let f of folders_need_create) {
+                        if (f.pid === pid) {
                             return undefined;
                         }
                     }
                 }
-                folders_need_create.push({author,pid});
+                folders_need_create.push({ author, pid });
                 return undefined;
             }
-            else{
+            else {
                 dlFolder = await createFolder(author, pid);
             }
         }
@@ -1016,29 +1040,29 @@ const sleep = (delay) => {return new Promise((resolve) => {return setTimeout(res
     }
 
     // 创建文件夹
-    function createFolder(authorName, pid, parentFolderId, subfolder=false){
-        if (build_ver == ""){
+    function createFolder(authorName, pid, parentFolderId, subfolder = false) {
+        if (build_ver == "") {
             checkEagleStatus();
         }
         let folderName = dirNameFormater.replaceAll(/\$\{authorName\}/g, authorName).replaceAll(/\$\{pid\}/g, pid);
-        if(subfolder){
+        if (subfolder) {
             folderName = authorName;
         }
         return new Promise((resolve, reject) => {
             parentFolderId = parentFolderId || searchDirId;
-            if(parentFolderId === ""){
+            if (parentFolderId === "") {
                 parentFolderId = undefined;
             }
             GM_xmlhttpRequest({
                 url: EAGLE_CREATE_FOLDER_API_URL,
                 method: "POST",
                 data: JSON.stringify({ folderName: folderName, parent: parentFolderId }),
-                onload: function(response) {
+                onload: function (response) {
                     var result = JSON.parse(response.response);
                     if (result.status === "success" && result.data && result.data.id) {
                         updateFolder({
-                            "folderId":result.data.id,
-                            "newDescription":`pid = ${pid}`
+                            "folderId": result.data.id,
+                            "newDescription": `pid = ${pid}`
                         });
                         folders.push({
                             id: result.data.id,
@@ -1048,7 +1072,7 @@ const sleep = (delay) => {return new Promise((resolve) => {return setTimeout(res
                         // console.log(folders);
                         return resolve(result.data);
                     }
-                    else{
+                    else {
                         console.log(`请检查eagle是否打开！`);
                         alert("文件夹创建失败！");
                         return reject();
@@ -1059,16 +1083,16 @@ const sleep = (delay) => {return new Promise((resolve) => {return setTimeout(res
     }
 
     // 更新文件夹信息
-    function updateFolder(data){
-        if(Number(build_ver) < edit_folder_info){
+    function updateFolder(data) {
+        if (Number(build_ver) < edit_folder_info) {
             return;
         }
         GM_xmlhttpRequest({
             url: EAGLE_UPDATE_FOLDER_API_URL,
             method: "POST",
             data: JSON.stringify(data),
-            onload: function(response) {
-                if(response.statusText !== "OK"){
+            onload: function (response) {
+                if (response.statusText !== "OK") {
                     console.log(`请检查eagle是否打开！`);
                     console.log(response);
                     console.log(data);
@@ -1079,10 +1103,10 @@ const sleep = (delay) => {return new Promise((resolve) => {return setTimeout(res
     }
 
     // 格式化作者名，删除多余后缀，为避免误伤，同时匹配到多次不作处理
-    function authorTrim(author){
+    function authorTrim(author) {
         let test = author.match(patt);
-        if(test && test.length === 1){
-            let tmp = author.replace(test[0],"");
+        if (test && test.length === 1) {
+            let tmp = author.replace(test[0], "");
             author = tmp === "" ? author : tmp;
         }
         // 删掉“接稿中”三个字
@@ -1090,39 +1114,55 @@ const sleep = (delay) => {return new Promise((resolve) => {return setTimeout(res
         return author
     }
 
-    function getCommonInfo(){
+    function getCommonInfo() {
         //获取标题
         let name = document.getElementsByClassName("sc-1u8nu73-3")[0];
-        if(name === undefined){
+        if (name === undefined) {
             name = document.title;
-        }else{
+        } else {
             name = name.textContent;
         }
         //获取描述(Eagle2.0版本以下因bug无法生效)
         let annotation = document.getElementById("expandable-paragraph-0");
-        if(annotation){annotation = annotation.textContent;}
-        else{annotation = "";}
+        if (annotation) { annotation = annotation.textContent; }
+        else { annotation = ""; }
         //把pixiv标签和标签翻译添加进eagle标签
         let tags = [];
-        if(saveTags){
-            $(TAG_SELECTOR).each((index,elem)=>{
-                $("a", elem).each((i,tag)=>{
-                    if((i == 0 && tagTranslation != 1) || (i == 1 && tagTranslation != 0)){
-                        if(tag.textContent) tags.push(tag.textContent);
+        if (saveTags) {
+            $(TAG_SELECTOR).each((index, elem) => {
+                $("a", elem).each((i, tag) => {
+                    if ((i == 0 && tagTranslation != 1) || (i == 1 && tagTranslation != 0)) {
+                        if (tag.textContent) {
+                            let newTextContent = tag.textContent;
+                            if (TAG_REPLACE[newTextContent]) {
+                                newTextContent = TAG_REPLACE[newTextContent];
+                            }
+                            let isExcluded = TAG_EXC.includes(newTextContent) || TAG_EXC_REGEX.some(regex => regex.test(newTextContent));
+                            if (!isExcluded) {
+                                tags.push(newTextContent);
+                            }
+                        }
                     }
                 })
             })
+
+            TAG_ADD.forEach(addTag => {
+                if (!tags.includes(addTag)) {
+                    tags.push(addTag);
+                }
+            });
+
         }
         let author = $(`${AUTHOR} div`).text();
         let id = $(AUTHOR).attr("data-gtm-value");
         author = authorTrim(author)
-        if(tagAuthor){
+        if (tagAuthor) {
             tags.push(author);
         }
         return [name, annotation, tags, author, id];
     }
 
-    function createCommonButton(text){
+    function createCommonButton(text) {
         let button = document.createElement('button');
         button.style.border = "none";
         button.style.background = "none";
@@ -1136,37 +1176,37 @@ const sleep = (delay) => {return new Promise((resolve) => {return setTimeout(res
     }
 
     // 创建全选、取消、下载三个按键
-    function createThreeButtons(element){
+    function createThreeButtons(element) {
         let button1 = createCommonButton("全选");
         let button2 = createCommonButton("取消");
         let button3 = createCommonButton("下载");
         button1.className = "button_to_eagle";
         button2.className = "button_to_eagle";
         button3.className = "button_to_eagle";
-        button1.addEventListener("click", ()=>{
-            $(".to_eagle", element).each((i,e)=>{
+        button1.addEventListener("click", () => {
+            $(".to_eagle", element).each((i, e) => {
                 e.checked = true;
             });
         });
-        button2.addEventListener("click", ()=>{
-            $(".to_eagle", element).each((i,e)=>{
+        button2.addEventListener("click", () => {
+            $(".to_eagle", element).each((i, e) => {
                 e.checked = false;
             });
         });
-        button3.addEventListener("click", ()=>{
-            if (build_ver == ""){
+        button3.addEventListener("click", () => {
+            if (build_ver == "") {
                 checkEagleStatus();
             }
             let count = $(".to_eagle", element).length;
-            $(".to_eagle", element).each((i,e)=>{
-                if(e.checked){
+            $(".to_eagle", element).each((i, e) => {
+                if (e.checked) {
                     addToDownloadList(e.parentElement.nextElementSibling.href, DLMultiple);
-                    if(--count === 0){
+                    if (--count === 0) {
                         downloadList();
                     }
                     e.checked = false;
                 }
-                else if(--count === 0){
+                else if (--count === 0) {
                     downloadList();
                 }
             });
@@ -1175,22 +1215,22 @@ const sleep = (delay) => {return new Promise((resolve) => {return setTimeout(res
         return [button1, button2, button3]
     }
 
-    // 
-    function createMultiPageButton(){
+    //
+    function createMultiPageButton() {
         let pageCount = document.URL.split("=")[1];
-        if (pageCount === undefined){
+        if (pageCount === undefined) {
             pageCount = 1;
         }
         let dl_page_between = document.createElement("div");
         dl_page_between.innerHTML = `<button class="button_to_eagle" style="border: none; background: none; margin-left: 20px; font-size: x-small; font-weight: bold; color: gray; cursor: pointer;">翻页下载</button><input type="number" name="start_page" min="1" max="34" value="1"><a>-</a><input type="number" name="end_page" min="1" max="34" value="${pageCount}">`
         dl_page_between.style = "display: flex;align-items: center;"
-        $("button", dl_page_between).click(()=>{
-            if (build_ver === ""){
+        $("button", dl_page_between).click(() => {
+            if (build_ver === "") {
                 checkEagleStatus();
             }
             let start_page = $("input[name=start_page]").val();
             let end_page = $("input[name=end_page]").val();
-            if (start_page > end_page){
+            if (start_page > end_page) {
                 alert("请输入正确页码区间！");
                 return;
             }
@@ -1200,11 +1240,11 @@ const sleep = (delay) => {return new Promise((resolve) => {return setTimeout(res
     }
 
     // 创建选择框
-    function createCheckbox(){
+    function createCheckbox() {
         let input_container = document.createElement("div");
         let checkbox = document.createElement("input");
-        checkbox.setAttribute("class","to_eagle");
-        checkbox.setAttribute("type","checkbox");
+        checkbox.setAttribute("class", "to_eagle");
+        checkbox.setAttribute("type", "checkbox");
         input_container.appendChild(checkbox);
         input_container.style.position = "absolute";
         input_container.style.zIndex = 3;
@@ -1216,28 +1256,28 @@ const sleep = (delay) => {return new Promise((resolve) => {return setTimeout(res
     };
 
     // 创建每张图片上的下载图标
-    function addDownloadButton(){
+    function addDownloadButton() {
         let pos = document.createElement("div");
         pos.style.zIndex = 3;
         let button = document.createElement("button");
         pos.appendChild(button);
-        button.setAttribute("class","dl_to_eagle iPGEIN");
+        button.setAttribute("class", "dl_to_eagle iPGEIN");
         button.setAttribute("type", "button");
         button.setAttribute("title", "下载这张图到Eagle");
         button.style.backgroundColor = "rgba(0,0,0,.1)";
         button.style.border = "none";
         button.innerHTML = '<svg viewBox="0 0 120 120" style="width: 22px;height: 22px;stroke: white;fill: none;stroke-width: 10;"><polyline style="stroke: black; stroke-width: 15;" points="60,102 60,8"></polyline><polyline style="stroke: black; stroke-width: 15;" points="10,55 60,105 110,55"></polyline><polyline points="60,100 60,10"></polyline><polyline points="12,57 60,105 108,57"></polyline></svg>';
-        button.addEventListener("click", ()=>{
-            if (build_ver === ""){
+        button.addEventListener("click", () => {
+            if (build_ver === "") {
                 checkEagleStatus();
             }
-            getImagePage(pos.parentElement.previousSibling.href).then(async (data /** item, author, authorId **/)=>{
+            getImagePage(pos.parentElement.previousSibling.href).then(async (data /** item, author, authorId **/) => {
                 console.log(data)
                 let dlFolderId = await getFolderId(data.author, data.authorId);
-                if(dlFolderId === undefined){
+                if (dlFolderId === undefined) {
                     console.log("创建文件夹失败！尝试直接下载……")
                 }
-                else{
+                else {
                     data.item.folderId = dlFolderId;
                 }
                 download(data.item);
@@ -1248,8 +1288,8 @@ const sleep = (delay) => {return new Promise((resolve) => {return setTimeout(res
     }
 
     // 获取新页面并返回图片信息
-    async function getImagePage(url){
-        return new Promise((resolve, reject)=>{
+    async function getImagePage(url) {
+        return new Promise((resolve, reject) => {
             let item = {
                 "website": url,
                 "tags": [],
@@ -1259,8 +1299,8 @@ const sleep = (delay) => {return new Promise((resolve) => {return setTimeout(res
                 type: "GET",
                 url: url,
                 dataType: "html",
-                success: async (data)=>{
-                    try{
+                success: async (data) => {
+                    try {
                         let html = $(data);
                         let preloadData = html.filter("#meta-preload-data")[0];
                         let illust = JSON.parse(preloadData.content)["illust"];
@@ -1269,19 +1309,19 @@ const sleep = (delay) => {return new Promise((resolve) => {return setTimeout(res
                         item.url = illustData.urls.original;
                         item.name = illustData.title;
                         item.annotation = illustData.description;
-                        if (saveTags){
-                            for(let tag of illustData.tags.tags){
-                                if(tag.translation){
-                                    if(tagTranslation != 1){
+                        if (saveTags) {
+                            for (let tag of illustData.tags.tags) {
+                                if (tag.translation) {
+                                    if (tagTranslation != 1) {
                                         item.tags.push(tag.tag);
                                     }
-                                    if(tagTranslation != 0){
-                                        for(let trans of Object.values(tag.translation)){
+                                    if (tagTranslation != 0) {
+                                        for (let trans of Object.values(tag.translation)) {
                                             item.tags.push(trans);
                                         }
                                     }
                                 }
-                                else{
+                                else {
                                     item.tags.push(tag.tag);
                                 }
                             }
@@ -1289,16 +1329,16 @@ const sleep = (delay) => {return new Promise((resolve) => {return setTimeout(res
                         let author = illustData.userName || illustData.userAccount;
                         let authorId = illustData.userId;
                         author = authorTrim(author)
-                        if(tagAuthor){
+                        if (tagAuthor) {
                             item.tags.push(author);
                         }
-                        if(!authorId){
+                        if (!authorId) {
                             console.log("获取用户id失败！")
                             console.log(illustData);
                         }
-                        resolve({item, author, authorId});
+                        resolve({ item, author, authorId });
                     }
-                    catch(e){
+                    catch (e) {
                         reject(e);
                     }
                 }
@@ -1307,15 +1347,15 @@ const sleep = (delay) => {return new Promise((resolve) => {return setTimeout(res
     }
 
     // 获取新页面并返回所有图片信息
-    async function getImagesPage(url){
+    async function getImagesPage(url) {
         await sleep(waitTime);
-        return new Promise((resolve, reject)=>{
+        return new Promise((resolve, reject) => {
             $.ajax({
                 type: "GET",
                 url: url,
                 dataType: "html",
-                success: async (data)=>{
-                    try{
+                success: async (data) => {
+                    try {
                         let items = [];
                         let html = $(data);
                         let preloadData = html.filter("#meta-preload-data")[0];
@@ -1330,10 +1370,10 @@ const sleep = (delay) => {return new Promise((resolve) => {return setTimeout(res
                         item.url = illustData.urls.original;
                         item.name = illustData.title;
                         item.annotation = illustData.description;
-                        for(let tag of illustData.tags.tags){
+                        for (let tag of illustData.tags.tags) {
                             item.tags.push(tag.tag);
-                            if(tag.translation){
-                                for(let trans of Object.values(tag.translation)){
+                            if (tag.translation) {
+                                for (let trans of Object.values(tag.translation)) {
                                     item.tags.push(trans);
                                 }
                             }
@@ -1341,17 +1381,17 @@ const sleep = (delay) => {return new Promise((resolve) => {return setTimeout(res
                         let author = illustData.userName || illustData.userAccount;
                         let authorId = illustData.userId;
                         author = authorTrim(author)
-                        if(tagAuthor){
+                        if (tagAuthor) {
                             item.tags.push(author);
                         }
-                        if(!authorId){
+                        if (!authorId) {
                             console.log("获取用户id失败！")
                             console.log(illustData);
                         }
-                        items.push({item, author, authorId});
+                        items.push({ item, author, authorId });
                         let url0 = item.url.replace(/0\.[a-z]+/, "");
                         let suffix = item.url.match(/(?<=0)\.[a-z]+/);
-                        for(let i = 1; i < illustData.pageCount; i++){
+                        for (let i = 1; i < illustData.pageCount; i++) {
                             let item = {
                                 "website": items[0].item.website,
                                 "url": url0 + i + suffix,
@@ -1360,11 +1400,11 @@ const sleep = (delay) => {return new Promise((resolve) => {return setTimeout(res
                                 "tags": items[0].item.tags,
                                 "headers": items[0].item.headers
                             };
-                            items.push({item, author, authorId});
+                            items.push({ item, author, authorId });
                         }
                         resolve(items);
                     }
-                    catch(e){
+                    catch (e) {
                         reject(e);
                     }
                 }
@@ -1394,7 +1434,7 @@ const sleep = (delay) => {return new Promise((resolve) => {return setTimeout(res
 
     IMPORTANT: This function requires your script to have loaded jQuery.
 */
-function waitForKeyElements (
+function waitForKeyElements(
     selectorTxt,            /* Required: The jQuery selector string that
                                 specifies the desired element(s).
                             */
@@ -1402,126 +1442,126 @@ function waitForKeyElements (
                                 found. It is passed a jNode to the matched
                                 element.
                             */
-    bWaitOnce=false,        /* Optional: If false, will continue to scan for
+    bWaitOnce = false,        /* Optional: If false, will continue to scan for
                                 new elements even after the first match is
                                 found.
                             */
-    iframeSelector=undefined,/* Optional: If set, identifies the iframe to
+    iframeSelector = undefined,/* Optional: If set, identifies the iframe to
                                 search.
                             */
-    bCallOnce=false         // 修改添加参数，
+    bCallOnce = false         // 修改添加参数，
 ) {
     var targetNodes, btargetsFound;
 
     if (typeof iframeSelector == "undefined")
-        targetNodes     = $(selectorTxt);
+        targetNodes = $(selectorTxt);
     else
-        targetNodes     = $(iframeSelector).contents ()
-                                           .find (selectorTxt);
+        targetNodes = $(iframeSelector).contents()
+            .find(selectorTxt);
 
-    if (targetNodes  &&  targetNodes.length > 0) {
-        btargetsFound   = true;
+    if (targetNodes && targetNodes.length > 0) {
+        btargetsFound = true;
         /*--- Found target node(s).  Go through each and act if they
             are new.
         */
-        if(bCallOnce){
-            var alreadyFound = targetNodes.data ('alreadyFound')  ||  false;
+        if (bCallOnce) {
+            var alreadyFound = targetNodes.data('alreadyFound') || false;
 
             if (!alreadyFound) {
                 //--- Call the payload function.
-                var cancelFound     = actionFunction ();
+                var cancelFound = actionFunction();
                 if (cancelFound)
-                    btargetsFound   = false;
+                    btargetsFound = false;
                 else
-                    targetNodes.data ('alreadyFound', true);
+                    targetNodes.data('alreadyFound', true);
             }
         }
-        else{
-            targetNodes.each ( function () {
-                var jThis        = $(this);
-                var alreadyFound = jThis.data ('alreadyFound')  ||  false;
+        else {
+            targetNodes.each(function () {
+                var jThis = $(this);
+                var alreadyFound = jThis.data('alreadyFound') || false;
 
                 if (!alreadyFound) {
                     //--- Call the payload function.
-                    var cancelFound     = actionFunction (jThis);
+                    var cancelFound = actionFunction(jThis);
                     if (cancelFound)
-                        btargetsFound   = false;
+                        btargetsFound = false;
                     else
-                        jThis.data ('alreadyFound', true);
+                        jThis.data('alreadyFound', true);
                 }
-            } );
+            });
         }
     }
     else {
-        btargetsFound   = false;
+        btargetsFound = false;
     }
 
     //--- Get the timer-control variable for this selector.
-    var controlObj      = waitForKeyElements.controlObj  ||  {};
-    var controlKey      = selectorTxt.replace (/[^\w]/g, "_");
-    var timeControl     = controlObj [controlKey];
+    var controlObj = waitForKeyElements.controlObj || {};
+    var controlKey = selectorTxt.replace(/[^\w]/g, "_");
+    var timeControl = controlObj[controlKey];
 
     //--- Now set or clear the timer as appropriate.
-    if (btargetsFound  &&  bWaitOnce  &&  timeControl) {
+    if (btargetsFound && bWaitOnce && timeControl) {
         //--- The only condition where we need to clear the timer.
-        clearInterval (timeControl);
-        delete controlObj [controlKey]
+        clearInterval(timeControl);
+        delete controlObj[controlKey]
     }
     else {
         //--- Set a timer, if needed.
-        if ( ! timeControl) {
-            timeControl = setInterval ( function () {
-                    waitForKeyElements (    selectorTxt,
-                                            actionFunction,
-                                            bWaitOnce,
-                                            iframeSelector,
-                                            bCallOnce
-                                        );
-                },
+        if (!timeControl) {
+            timeControl = setInterval(function () {
+                waitForKeyElements(selectorTxt,
+                    actionFunction,
+                    bWaitOnce,
+                    iframeSelector,
+                    bCallOnce
+                );
+            },
                 200
             );
-            controlObj [controlKey] = timeControl;
+            controlObj[controlKey] = timeControl;
         }
     }
-    waitForKeyElements.controlObj   = controlObj;
+    waitForKeyElements.controlObj = controlObj;
 }
 
 
 // 脚本设置选项
 GM_registerMenuCommand("更新设置", updateConfig);
 
-function updateConfig(){
+function updateConfig() {
     config_div.style.background = isDarkMode() ? "black" : "white";
-    if (config_div.style.display === "none"){
+    if (config_div.style.display === "none") {
         config_div.style.display = "inline";
     }
-    else{
+    else {
         config_div.style.display = "none";
     }
 }
 
-function createConfigPage(){
+function createConfigPage() {
     let config_div = document.createElement("div");
 
-    function createNewConfig(text, type, value){
+    function createNewConfig(text, type, value) {
         let p = document.createElement("p");
         let input = document.createElement("input");
         input.setAttribute("type", type);
-        if(type === "text"){
+        if (type === "text") {
             input.style.width = "100%";
             input.value = value;
             p.innerText = text;
             config_div.appendChild(p);
             config_div.appendChild(input);
         }
-        else if(type === "number"){
-            // input.style.width = 
+        else if (type === "number") {
+            // input.style.width =
             input.value = value;
             p.append(text);
             p.appendChild(input);
             config_div.appendChild(p);
         }
-        else if(type === "checkbox"){
+        else if (type === "checkbox") {
             input.style.marginLeft = "10px";
             input.checked = value;
             p.appendChild(input);
@@ -1530,18 +1570,18 @@ function createConfigPage(){
         }
         return input;
     }
-    function createSelection(info, name, values, display_names, selected){
+    function createSelection(info, name, values, display_names, selected) {
         let div = document.createElement("div");
         div.innerText = info;
         let selection = document.createElement("select");
         selection.name = name;
         div.appendChild(selection);
         // selectedIndex = 0;
-        for (let i in values){
+        for (let i in values) {
             let opt = document.createElement("option");
             opt.value = values[i];
             opt.innerText = display_names[i];
-            if(values[i] == selected){
+            if (values[i] == selected) {
                 // selection.selectedIndex = i;
                 opt.setAttribute("selected", "");
             }
@@ -1573,7 +1613,7 @@ function createConfigPage(){
     button_cancel.innerText = "取消";
     button_save.style.margin = "20px";
     button_cancel.style.margin = "20px";
-    button_save.addEventListener("click", ()=>{
+    button_save.addEventListener("click", () => {
         saveTags = saveTags_input.checked;
         tagAuthor = tagAuthor_input.checked;
         addToFavor = addToFavor_input.checked;
@@ -1600,7 +1640,7 @@ function createConfigPage(){
         GM_setValue("createSubfolder", createSubfolder);
         config_div.style.display = "none";
     });
-    button_cancel.addEventListener("click",()=>{
+    button_cancel.addEventListener("click", () => {
         config_div.style.display = "none";
     });
     config_div.appendChild(button_save);
